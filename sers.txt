@@ -1,0 +1,695 @@
+0. импорты
+# универсальный импорт
+# ==================== БАЗОВЫЕ БИБЛИОТЕКИ ====================
+import warnings                           # Отключает предупреждения Python
+warnings.filterwarnings('ignore')         # Игнорирует все предупреждения (чтобы не мешали)
+
+import numpy as np                        # Работа с массивами и математическими операциями
+import pandas as pd                       # Работа с таблицами (DataFrame)
+
+# ==================== ВИЗУАЛИЗАЦИЯ ====================
+import matplotlib.pyplot as plt           # Основная библиотека для построения графиков
+import seaborn as sns                     # Более красивая и удобная визуализация (на базе matplotlib)
+sns.set_style("whitegrid")                # Устанавливает стиль графиков (белая сетка)
+plt.rcParams['figure.figsize'] = (10, 6)  # Размер графиков по умолчанию
+
+# ==================== SCIKIT-LEARN: РАЗБИЕНИЕ И ОПТИМИЗАЦИЯ ====================
+from sklearn.model_selection import train_test_split          # Разбиение данных на train и test
+from sklearn.model_selection import StratifiedKFold           # Разбиение с сохранением баланса классов
+from sklearn.model_selection import GridSearchCV              # Поиск лучших гиперпараметров (полный перебор)
+from sklearn.model_selection import learning_curve            # Построение кривой обучения
+from sklearn.model_selection import validation_curve          # Построение кривой валидации
+
+# ==================== SCIKIT-LEARN: ПРЕДОБРАБОТКА ====================
+from sklearn.compose import ColumnTransformer                 # Объединяет разные преобразования для колонок
+from sklearn.pipeline import Pipeline                         # Объединяет шаги предобработки и модель в один объект
+from sklearn.preprocessing import StandardScaler              # Стандартизация (среднее = 0, std = 1)
+from sklearn.preprocessing import OneHotEncoder               # Кодирование категориальных признаков (One-Hot)
+from sklearn.preprocessing import LabelEncoder                # Кодирование целевой переменной (в числа)
+from sklearn.impute import SimpleImputer                      # Заполнение пропущенных значений
+
+# ==================== SCIKIT-LEARN: МОДЕЛИ ====================
+from sklearn.linear_model import LogisticRegression           # Логистическая регрессия (простая модель)
+from sklearn.ensemble import RandomForestClassifier           # Случайный лес (мощная модель)
+from sklearn.neural_network import MLPClassifier              # Глубокое обучение
+
+# ==================== SCIKIT-LEARN: МЕТРИКИ ====================
+from sklearn.metrics import accuracy_score                    # Доля правильных ответов
+from sklearn.metrics import f1_score                          # F1-мера (хорошо работает при дисбалансе)
+from sklearn.metrics import roc_auc_score                     # Площадь под ROC-кривой
+from sklearn.metrics import classification_report             # Полный отчёт по метрикам
+from sklearn.metrics import confusion_matrix                  # Матрица ошибок
+from sklearn.metrics import ConfusionMatrixDisplay            # Красивое отображение матрицы ошибок
+
+# ==================== СОХРАНЕНИЕ ====================
+import joblib                                                 # Сохранение и загрузка моделей
+
+
+1. Загрузка данных и первичный осмотр структуры
+На этом этапе важно не просто вывести head(), а описать размер таблицы, типы данных, целевую переменную, пропуски, дубликаты и потенциально проблемные признаки.
+DATA_PATH = 'wine_exam_example_dirty.csv'
+
+df = pd.read_csv(DATA_PATH)
+
+print('Размер датасета:', df.shape)
+df.head()
+
+print('Информация о датасете:')
+df.info()
+
+print('Количество пропусков по столбцам:')
+df.isna().sum().sort_values(ascending=False)
+
+
+2. Предобработка данных
+В этом разделе выполняется очистка данных:
+
+удаление дубликатов;
+обработка грязных категориальных значений;
+удаление признаков, которые нельзя использовать для обучения;
+проверка пропусков;
+подготовка целевой переменной.
+Важно: числовые пропуски и категориальные пропуски далее будут обработаны внутри Pipeline, чтобы не было утечки данных из валидационной выборки.
+
+# универсальный блок
+'''
+# ==================== ПРЕДОБРАБОТКА ДАННЫХ ====================
+clean_df = df.copy()
+
+# --- 1. Удаление дубликатов ---
+print('Дубликаты до очистки:', clean_df.duplicated().sum())
+clean_df = clean_df.drop_duplicates()
+print('Строк после удаления дубликатов:', clean_df.shape[0])
+
+# --- 2. Удаление ненужных признаков ---
+# <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ: добавь сюда колонки, которые нужно удалить
+cols_to_drop = ['SampleID', 'TargetCodeLeak']
+
+existing_cols_to_drop = [col for col in cols_to_drop if col in clean_df.columns]
+clean_df = clean_df.drop(columns=existing_cols_to_drop)
+print('Удалённые признаки:', existing_cols_to_drop)
+
+# --- 3. Очистка грязных категориальных значений ---
+# <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ: укажи колонку и допустимые значения
+dirty_cat_col = 'AlcoholLevel'
+allowed_values = ['low', 'medium', 'high']
+
+if dirty_cat_col in clean_df.columns:
+    clean_df[dirty_cat_col] = clean_df[dirty_cat_col].where(
+        clean_df[dirty_cat_col].isin(allowed_values), np.nan
+    )
+    print(f'Уникальные значения {dirty_cat_col} после очистки:')
+    print(clean_df[dirty_cat_col].unique())
+
+# --- 4. Проверка целевой переменной ---
+target_col = 'WineClass'  # <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ (название целевой)
+print('\nРаспределение целевой переменной:')
+print(clean_df[target_col].value_counts())
+'''
+
+
+3. Анализ EDA
+# ==================== EDA: Распределение целевой переменной ====================
+target_col = 'WineClass'                    # <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ
+
+plt.figure(figsize=(6, 4))
+clean_df[target_col].value_counts().sort_index().plot(kind='bar', color='steelblue')
+plt.title(f'Распределение объектов по классам {target_col}')
+plt.xlabel('Класс')
+plt.ylabel('Количество объектов')
+plt.grid(axis='y', alpha=0.3)
+plt.show()
+
+# Описательная статистика числовых признаков
+clean_df.describe().T
+
+# 1шаг-глянуть как отображается в общем виде boxplot
+'''
+# Boxplot числовых признаков для поиска потенциальных выбросов
+numeric_cols = clean_df.select_dtypes(include=np.number).columns.tolist()
+
+plt.figure(figsize=(14, 6))
+clean_df[numeric_cols].boxplot(rot=45)
+plt.title('Boxplot числовых признаков')
+plt.ylabel('Значения признаков')
+plt.grid(True)
+plt.show()
+'''
+
+# 2шаг-при необходимости отразить в разных масштабах
+numeric_cols = clean_df.select_dtypes(include=np.number).columns.tolist()
+
+# Разделяем на признаки с большим и маленьким масштабом
+large_scale = ['proline', 'magnesium']           # <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ
+small_scale = [col for col in numeric_cols if col not in large_scale]
+
+plt.figure(figsize=(12, 5))
+
+plt.subplot(1, 2, 1)
+clean_df[small_scale].boxplot(rot=45)
+plt.title('Boxplot (малый масштаб)')
+plt.grid(True)
+
+plt.subplot(1, 2, 2)
+clean_df[large_scale].boxplot(rot=45)
+plt.title('Boxplot (большой масштаб)')
+plt.grid(True)
+
+plt.tight_layout()
+plt.show()
+
+# Корреляционная матрица числовых признаков
+# версия АС
+'''
+corr = clean_df[numeric_cols].corr()
+
+plt.figure(figsize=(10, 8))
+plt.imshow(corr, aspect='auto')
+plt.colorbar()
+plt.xticks(range(len(corr.columns)), corr.columns, rotation=90)
+plt.yticks(range(len(corr.columns)), corr.columns)
+plt.title('Корреляционная матрица числовых признаков')
+plt.tight_layout()
+plt.show()
+'''
+# новая универсальная
+corr = clean_df[numeric_cols].corr()
+
+plt.figure(figsize=(11, 9))
+sns.heatmap(corr, annot=True, fmt=".2f", cmap='coolwarm', 
+            center=0, linewidths=0.5, cbar_kws={'shrink': 0.8})
+plt.title('Корреляционная матрица числовых признаков')
+plt.xticks(rotation=45, ha='right')
+plt.tight_layout()
+plt.show()
+
+# Гистограммы числовых признаков
+clean_df[numeric_cols].hist(figsize=(14, 10), bins=20)
+plt.suptitle('Распределения числовых признаков')
+plt.tight_layout()
+plt.show()
+
+
+
+4. Набор данных
+# ==================== ФОРМИРОВАНИЕ X и y ====================
+TARGET = 'WineClass'                                    # <-- ИЗМЕНИТЬ ПОД ДАТАСЕТ
+
+X = clean_df.drop(columns=[TARGET])
+y = clean_df[TARGET]
+
+label_encoder = LabelEncoder()
+y_encoded = label_encoder.fit_transform(y)
+
+print('Классы:', list(label_encoder.classes_))
+print('Размер X:', X.shape)
+print('Размер y:', y_encoded.shape)
+# ==================== РАЗБИЕНИЕ ДАННЫХ ====================
+X_train, X_valid, y_train, y_valid = train_test_split(
+    X, y_encoded,
+    test_size=0.25,                                     # <-- ИЗМЕНИТЬ (рекомендуется 0.2–0.3)
+    random_state=42,
+    stratify=y_encoded
+)
+
+print('Размер обучающей выборки:', X_train.shape)
+print('Размер валидационной выборки:', X_valid.shape)
+# ==================== ПРЕДОБРАБОТКА ====================
+# Универсальная предобработка:
+# - для числовых признаков: заполнение пропусков медианой + стандартизация;
+# - для категориальных признаков: заполнение самым частым значением + one-hot encoding.
+numeric_features = X_train.select_dtypes(include=np.number).columns.tolist()
+categorical_features = X_train.select_dtypes(include='object').columns.tolist()
+
+print('Числовые признаки:', numeric_features)
+print('Категориальные признаки:', categorical_features)
+
+numeric_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='median')),
+    ('scaler', StandardScaler())
+])
+
+categorical_transformer = Pipeline(steps=[
+    ('imputer', SimpleImputer(strategy='most_frequent')),
+    ('onehot', OneHotEncoder(handle_unknown='ignore'))
+])
+
+preprocessor = ColumnTransformer(
+    transformers=[
+        ('num', numeric_transformer, numeric_features),
+        ('cat', categorical_transformer, categorical_features)
+    ]
+)
+
+
+5. Логистическая регрессия
+# ==================== ЛОГИСТИЧЕСКАЯ РЕГРЕССИЯ ====================
+log_reg_model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('model', LogisticRegression(
+        max_iter=5000,
+        random_state=42,
+        class_weight='balanced'                    # Учитываем дисбаланс
+    ))
+])
+
+log_reg_model.fit(X_train, y_train)
+y_pred_lr = log_reg_model.predict(X_valid)
+
+print('=== Logistic Regression ===')
+print('Accuracy:', accuracy_score(y_valid, y_pred_lr))
+print('F1-score (weighted):', f1_score(y_valid, y_pred_lr, average='weighted'))
+print(classification_report(y_valid, y_pred_lr, target_names=label_encoder.classes_))
+
+
+
+6. Оптимизация логистической регерессии
+Оптимизируем логистическую регрессию с помощью GridSearchCV. Подбираем:
+
+C — силу регуляризации; penalty — тип регуляризации; solver — алгоритм оптимизации. Маленькое C означает сильную регуляризацию, большое C — слабую регуляризацию.
+
+param_grid_lr = [
+    {
+        'model__C': [0.01, 0.1, 1, 10],
+        'model__penalty': ['l1', 'l2'],
+        'model__solver': ['liblinear']
+    },
+    {
+        'model__C': [0.01, 0.1, 1, 10],
+        'model__penalty': ['l2'],
+        'model__solver': ['lbfgs']
+    }
+]
+
+grid_lr = GridSearchCV(
+    estimator=log_reg_model,
+    param_grid=param_grid_lr,
+    cv=5,
+    scoring='f1_weighted',           # Лучше accuracy при дисбалансе
+    n_jobs=-1,
+    return_train_score=True
+)
+
+grid_lr.fit(X_train, y_train)
+
+print("Лучшие параметры:", grid_lr.best_params_)
+print("Лучший F1-score на CV:", round(grid_lr.best_score_, 4))
+
+y_pred_opt = grid_lr.predict(X_valid)
+print("\n=== Результаты на валидации ===")
+print("Accuracy:", accuracy_score(y_valid, y_pred_opt))
+print("F1-score (weighted):", f1_score(y_valid, y_pred_opt, average='weighted'))
+print(classification_report(y_valid, y_pred_opt, target_names=label_encoder.classes_))
+
+
+
+7. Графики логистической регерссии
+Для логистической регрессии строим:
+
+матрицу ошибок; кривую валидации по параметру C; кривую обучения.
+
+cm_lr = confusion_matrix(y_valid, y_pred_opt)
+
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm_lr,
+    display_labels=label_encoder.classes_
+)
+
+disp.plot()
+plt.grid(False)
+plt.title('Матрица ошибок: оптимизированная Logistic Regression')
+plt.show()
+
+# ==================== КРИВАЯ ВАЛИДАЦИИ ====================
+param_range_C = np.logspace(-3, 3, 7)
+
+# Создаём базовую модель (удобнее для запоминания)
+base_model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('model', LogisticRegression(max_iter=5000, solver='liblinear', penalty='l2', random_state=42))
+])
+
+train_scores, valid_scores = validation_curve(
+    estimator=base_model,
+    X=X_train,
+    y=y_train,
+    param_name='model__C',
+    param_range=param_range_C,
+    cv=5,
+    scoring='f1_weighted',
+    n_jobs=-1
+)
+
+train_mean = train_scores.mean(axis=1)
+valid_mean = valid_scores.mean(axis=1)
+
+plt.figure(figsize=(8, 5))
+plt.semilogx(param_range_C, train_mean, marker='o', label='Train')
+plt.semilogx(param_range_C, valid_mean, marker='o', label='Validation')
+plt.title('Кривая валидации по параметру C')
+plt.xlabel('C')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+train_sizes_lr, train_scores_lc_lr, valid_scores_lc_lr = learning_curve(
+    estimator=grid_lr.best_estimator_,
+    X=X_train,
+    y=y_train,
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1,
+    train_sizes=np.linspace(0.2, 1.0, 5)
+)
+
+plt.figure(figsize=(8, 5))
+plt.plot(train_sizes_lr, train_scores_lc_lr.mean(axis=1), marker='o', label='Train')
+plt.plot(train_sizes_lr, valid_scores_lc_lr.mean(axis=1), marker='o', label='Validation')
+plt.title('Кривая обучения Logistic Regression')
+plt.xlabel('Размер обучающей выборки')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+8. Random Forest
+# ==================== RANDOM FOREST ====================
+rf_model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('model', RandomForestClassifier(
+        n_estimators=100,
+        max_depth=None,
+        min_samples_split=2,
+        random_state=42,
+        class_weight='balanced',
+        n_jobs=-1
+    ))
+])
+
+rf_model.fit(X_train, y_train)
+y_pred_rf = rf_model.predict(X_valid)
+
+print('=== Random Forest ===')
+print('Accuracy:', round(accuracy_score(y_valid, y_pred_rf), 4))
+print('F1-score (weighted):', round(f1_score(y_valid, y_pred_rf, average='weighted'), 4))
+print(classification_report(y_valid, y_pred_rf, target_names=label_encoder.classes_))
+
+
+
+9. Оптимизация random forest
+# ==================== ОПТИМИЗАЦИЯ RANDOM FOREST ====================
+param_grid_rf = {
+    'model__n_estimators': [50, 100, 200],
+    'model__max_depth': [None, 10, 20, 30],
+    'model__min_samples_split': [2, 5, 10],
+    'model__min_samples_leaf': [1, 2, 4]
+}
+
+grid_rf = GridSearchCV(
+    estimator=rf_model,
+    param_grid=param_grid_rf,
+    cv=5,
+    scoring='f1_weighted',
+    n_jobs=-1,
+    verbose=1
+)
+
+grid_rf.fit(X_train, y_train)
+
+print("Лучшие параметры Random Forest:")
+print(grid_rf.best_params_)
+print("\nЛучший F1-score на кросс-валидации:", round(grid_rf.best_score_, 4))
+
+y_pred_rf_opt = grid_rf.predict(X_valid)
+
+print("\n=== Результаты оптимизированной модели на валидации ===")
+print("Accuracy:", round(accuracy_score(y_valid, y_pred_rf_opt), 4))
+print("F1-score (weighted):", round(f1_score(y_valid, y_pred_rf_opt, average='weighted'), 4))
+print(classification_report(y_valid, y_pred_rf_opt, target_names=label_encoder.classes_))
+
+
+
+10. Графики для random forest
+# ==================== МАТРИЦА ОШИБОК RANDOM FOREST ====================
+cm_rf = confusion_matrix(y_valid, y_pred_rf_opt)
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm_rf,
+    display_labels=label_encoder.classes_
+)
+disp.plot()
+plt.grid(False)
+plt.title('Матрица ошибок: оптимизированная Random Forest')
+plt.show()
+
+param_range = [5, 10, 15, 20, None]
+
+train_scores, valid_scores = validation_curve(
+    estimator=grid_rf.best_estimator_,
+    X=X_train,
+    y=y_train,
+    param_name='model__max_depth',
+    param_range=param_range,
+    cv=5,
+    scoring='f1_weighted',           # ← лучше accuracy
+    n_jobs=-1
+)
+
+plt.figure(figsize=(8, 5))
+plt.plot([str(x) for x in param_range], train_scores.mean(axis=1), marker='o', label='Train')
+plt.plot([str(x) for x in param_range], valid_scores.mean(axis=1), marker='o', label='Validation')
+plt.title('Кривая валидации Random Forest по max_depth')
+plt.xlabel('max_depth')
+plt.ylabel('F1-score (weighted)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+train_sizes, train_scores, valid_scores = learning_curve(
+    estimator=grid_rf.best_estimator_,
+    X=X_train,
+    y=y_train,
+    cv=5,
+    scoring='f1_weighted',           # ← лучше accuracy
+    n_jobs=-1,
+    train_sizes=np.linspace(0.2, 1.0, 5)
+)
+
+plt.figure(figsize=(8, 5))
+plt.plot(train_sizes, train_scores.mean(axis=1), marker='o', label='Train')
+plt.plot(train_sizes, valid_scores.mean(axis=1), marker='o', label='Validation')
+plt.title('Кривая обучения Random Forest')
+plt.xlabel('Размер обучающей выборки')
+plt.ylabel('F1-score (weighted)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+
+
+11. Глубокое обучение
+mlp_model = Pipeline(steps=[
+    ('preprocessor', preprocessor),
+    ('model', MLPClassifier(
+        hidden_layer_sizes=(64, 32),
+        activation='relu',
+        alpha=0.001,
+        learning_rate_init=0.001,
+        max_iter=1000,
+        early_stopping=True,
+        random_state=42
+    ))
+])
+
+mlp_model.fit(X_train, y_train)
+
+y_pred_mlp = mlp_model.predict(X_valid)
+
+print('Accuracy MLP:', accuracy_score(y_valid, y_pred_mlp))
+print(classification_report(y_valid, y_pred_mlp, target_names=label_encoder.classes_))
+
+
+
+12. Оптимизация глубокого обучения
+# ==================== ОПТИМИЗАЦИЯ MLPCLASSIFIER ====================
+param_grid_mlp = {
+    'model__hidden_layer_sizes': [(32,), (64,), (64, 32), (128, 64)],
+    'model__activation': ['relu', 'tanh'],
+    'model__alpha': [0.0001, 0.001, 0.01],
+    'model__learning_rate_init': [0.001, 0.005]
+}
+
+grid_mlp = GridSearchCV(
+    estimator=mlp_model,
+    param_grid=param_grid_mlp,
+    cv=5,
+    scoring='f1_weighted',           # Лучше accuracy при дисбалансе
+    n_jobs=-1,
+    verbose=1
+)
+
+grid_mlp.fit(X_train, y_train)
+
+print('Лучшие параметры MLP:')
+print(grid_mlp.best_params_)
+print('Лучший F1-score на кросс-валидации:', round(grid_mlp.best_score_, 4))
+
+y_pred_mlp_opt = grid_mlp.predict(X_valid)
+
+print('\n=== Результаты оптимизированной MLP на валидации ===')
+print('Accuracy:', round(accuracy_score(y_valid, y_pred_mlp_opt), 4))
+print('F1-score (weighted):', round(f1_score(y_valid, y_pred_mlp_opt, average='weighted'), 4))
+print(classification_report(y_valid, y_pred_mlp_opt, target_names=label_encoder.classes_))
+
+
+
+13. Графики глубокой модели
+cm_mlp = confusion_matrix(y_valid, y_pred_mlp_opt)
+
+disp = ConfusionMatrixDisplay(
+    confusion_matrix=cm_mlp,
+    display_labels=label_encoder.classes_
+)
+
+disp.plot()
+plt.grid(False)
+plt.title('Матрица ошибок: оптимизированная MLP')
+plt.show()
+
+# ==================== КРИВАЯ ВАЛИДАЦИИ MLP (оптимизированная модель) ====================
+param_range_alpha = np.logspace(-5, 0, 6)
+
+train_scores_mlp, valid_scores_mlp = validation_curve(
+    estimator=grid_mlp.best_estimator_,           # ← используем оптимизированную модель
+    X=X_train,
+    y=y_train,
+    param_name='model__alpha',
+    param_range=param_range_alpha,
+    cv=5,
+    scoring='f1_weighted',                        # лучше accuracy
+    n_jobs=-1
+)
+
+train_mean_mlp = train_scores_mlp.mean(axis=1)
+valid_mean_mlp = valid_scores_mlp.mean(axis=1)
+
+plt.figure(figsize=(8, 5))
+plt.semilogx(param_range_alpha, train_mean_mlp, marker='o', label='Train')
+plt.semilogx(param_range_alpha, valid_mean_mlp, marker='o', label='Validation')
+plt.title('Кривая валидации MLP по параметру alpha')
+plt.xlabel('alpha')
+plt.ylabel('F1-score (weighted)')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+train_sizes_mlp, train_scores_lc_mlp, valid_scores_lc_mlp = learning_curve(
+    estimator=grid_mlp.best_estimator_,
+    X=X_train,
+    y=y_train,
+    cv=5,
+    scoring='accuracy',
+    n_jobs=-1,
+    train_sizes=np.linspace(0.2, 1.0, 5)
+)
+
+plt.figure(figsize=(8, 5))
+plt.plot(train_sizes_mlp, train_scores_lc_mlp.mean(axis=1), marker='o', label='Train')
+plt.plot(train_sizes_mlp, valid_scores_lc_mlp.mean(axis=1), marker='o', label='Validation')
+plt.title('Кривая обучения MLP')
+plt.xlabel('Размер обучающей выборки')
+plt.ylabel('Accuracy')
+plt.legend()
+plt.grid(True)
+plt.show()
+
+# График функции потерь лучшей нейронной сети
+best_mlp = grid_mlp.best_estimator_.named_steps['model']
+
+plt.figure(figsize=(8, 5))
+plt.plot(best_mlp.loss_curve_)
+plt.title('График функции потерь MLP')
+plt.xlabel('Эпоха')
+plt.ylabel('Loss')
+plt.grid(True)
+plt.show()
+
+
+
+14. Сравнение качества и сохранение лучшей модели
+# ==================== СРАВНЕНИЕ КАЧЕСТВА МОДЕЛЕЙ ====================
+results = pd.DataFrame({
+    'Модель': [
+        'Logistic Regression (base)',
+        'Logistic Regression (optimized)',
+        'Random Forest (base)',
+        'Random Forest (optimized)',
+        'MLPClassifier (base)',
+        'MLPClassifier (optimized)'
+    ],
+    'Accuracy': [
+        accuracy_score(y_valid, y_pred_lr),
+        accuracy_score(y_valid, y_pred_opt),
+        accuracy_score(y_valid, y_pred_rf),           # <-- добавь эту переменную, если ещё нет
+        accuracy_score(y_valid, y_pred_rf_opt),
+        accuracy_score(y_valid, y_pred_mlp),
+        accuracy_score(y_valid, y_pred_mlp_opt)
+    ]
+})
+
+print(results)
+
+# Визуализация
+plt.figure(figsize=(10, 6))
+plt.bar(results['Модель'], results['Accuracy'], color=['steelblue']*6)
+plt.title('Сравнение качества моделей')
+plt.xlabel('Модель')
+plt.ylabel('Accuracy')
+plt.xticks(rotation=30, ha='right')
+plt.ylim(0, 1.05)
+plt.grid(axis='y', alpha=0.3)
+plt.tight_layout()
+plt.show()
+
+# ==================== ОПРЕДЕЛЕНИЕ ЛУЧШЕЙ МОДЕЛИ ====================
+# Считаем accuracy для всех моделей
+acc_lr      = accuracy_score(y_valid, y_pred_lr)
+acc_lr_opt  = accuracy_score(y_valid, y_pred_opt)
+acc_rf      = accuracy_score(y_valid, y_pred_rf)
+acc_rf_opt  = accuracy_score(y_valid, y_pred_rf_opt)
+acc_mlp     = accuracy_score(y_valid, y_pred_mlp)
+acc_mlp_opt = accuracy_score(y_valid, y_pred_mlp_opt)
+
+# Создаём словарь с моделями и их accuracy
+models_dict = {
+    'Logistic Regression (base)':       (acc_lr,      None),
+    'Logistic Regression (optimized)':  (acc_lr_opt,  grid_lr.best_estimator_),
+    'Random Forest (base)':             (acc_rf,      rf_model),
+    'Random Forest (optimized)':        (acc_rf_opt,  grid_rf.best_estimator_),
+    'MLPClassifier (base)':             (acc_mlp,     mlp_model),
+    'MLPClassifier (optimized)':        (acc_mlp_opt, grid_mlp.best_estimator_)
+}
+
+# Находим модель с максимальной accuracy
+best_model_name = max(models_dict, key=lambda x: models_dict[x][0])
+best_accuracy   = models_dict[best_model_name][0]
+best_model      = models_dict[best_model_name][1]
+
+print(f'Лучшая модель: {best_model_name}')
+print(f'Accuracy лучшей модели: {best_accuracy:.4f}')
+
+# ==================== СОХРАНЕНИЕ ЛУЧШЕЙ МОДЕЛИ ====================
+joblib.dump(best_model, 'best_exam_model.pkl')
+joblib.dump(label_encoder, 'label_encoder.pkl')
+
+print('\nМодель сохранена в файл: best_exam_model.pkl')
+print('Кодировщик целевой переменной сохранён в файл: label_encoder.pkl')
+
+# ==================== ПРОВЕРКА ЗАГРУЗКИ МОДЕЛИ ====================
+loaded_model = joblib.load('best_exam_model.pkl')
+loaded_encoder = joblib.load('label_encoder.pkl')
+
+sample_prediction = loaded_model.predict(X_valid.head(5))
+print('Предсказания для первых 5 объектов:', loaded_encoder.inverse_transform(sample_prediction))
